@@ -26,45 +26,48 @@ ShotTestCases option=INVALID_TEST;
 Functions
 */
 
+static void
+print_usage(char* appname)
+{
+	 g_printerr("Usage: %s [-o 0=STANDBY_TO_FIRST_SHOT | 1=SHOT_TO_SHOT | 2=SHOT_TO_SAVE] [-p pipeline] [-l log file]\n",appname);
+	 g_printerr("\nPipelines Examples:\n\n");
+	 g_printerr("\t %s -o 0 -l out.txt -p \"goocamera num-buffers=1 imagecap=true display-pos-x=50 display-pos-y=200 ! video/x-raw-yuv, format=(fourcc)UYVY, width=640, height=480, framerate=10/1 ! fakesink\"\n\n", appname);
+	 g_printerr("\t %s -o 1 -l out.txt -p \"goocamera num-buffers=1 imagecap=true display-pos-x=50 display-pos-y=200 ! video/x-raw-yuv, format=(fourcc)UYVY, width=640, height=480, framerate=10/1 ! fakesink\"\n\n", appname);
+	 g_printerr("\t %s -o 2 -l out.txt -p \"goocamera num-buffers=1 imagecap=true display-pos-x=50 display-pos-y=200 ! video/x-raw-yuv, format=(fourcc)UYVY, width=640, height=480, framerate=10/1 ! goofilter_vpp ! gooenc_jpeg ! filesink location=test.jpeg\"\n\n", appname);
+}
+
 /*
 Get input arguments
 */
-static ShotTestCases
+static gboolean
 get_input_arguments(
-  int argc,
-  char **argv,
-  ShotTestCases *option,
-  gint *width,
-  gint *height,
-  gint *num_buffers,
-  gchar **output_result_file,
-  gchar **output_image_file)
+	int argc,
+	char **argv,
+	ShotTestCases *option,
+	gchar **output_result_file,
+	gchar** str_pipeline)
+
 {
 
-    static gchar *usage = "Usage: %s [-o 0=STANDBY_TO_FIRST_SHOT | 1=SHOT_TO_SHOT | 2=SHOT_TO_SAVE] [-b num-buffers] [-w width] [-h height] [-i output-image-file] [-r output-results-file]\n";
+
     int c;
 
     opterr = 0;
 
-    while ((c = getopt (argc, argv, "w:h:o:b:i:r:d")) != -1)
+    while ((c = getopt (argc, argv, "o:p:l:")) != -1)
     {
      switch (c)
        {
-       case 'r':
+       case 'l':
          *output_result_file = optarg;
          break;
-       case 'i':
-         *output_image_file = optarg;
-         break;
-       case 'w':
-         *width = atoi(optarg);
-         break;
-       case 'h':
-         *height = atoi(optarg);
+       case 'p':
+         *str_pipeline = optarg;
          break;
        case 'o':
-         switch(atoi(optarg))
          {
+         switch (atoi (optarg))
+           {
            case 0:
              *option = STANDBY_TO_FIRST_SHOT;
              break;
@@ -77,31 +80,38 @@ get_input_arguments(
            default:
              *option = INVALID_TEST;
              break;
-          }
-         break;
-       case 'b':
-         *num_buffers = atoi(optarg);
-         break;
+           }
+           break;
+         }
        case '?':
-         g_printerr("Invalid arguments\n");
-         g_printerr (usage, argv[0]);
-         return INVALID_TEST;
+         {
+           g_printerr ("Invalid arguments\n");
+             print_usage (argv[0]);
+             return FALSE;
+         }
        default:
-         abort();
+         abort ();
        }
     }
 
-/*
-    necessary parameters
-*/
-    if( *option == INVALID_TEST )
+    /*
+        necessary parameters
+    */
+    if (*option == INVALID_TEST)
     {
-      g_printerr("Missing arguments [-o option]\n");
-      g_printerr (usage, argv[0]);
-        return INVALID_TEST;
+        g_printerr ("Invalid or missing argument [-o option]\n");
+        print_usage (argv[0]);
+        return FALSE;
     }
 
-    return *option;
+    if (!str_pipeline)
+    {
+        g_printerr ("Missing argument [-p option]\n");
+        print_usage (argv[0]);
+        return FALSE;
+    }
+
+    return TRUE;
 }
 
 static gchar *
@@ -121,7 +131,8 @@ get_state_transition_timestamp_double(GstStateChange transition)
   value = (gchar *)g_hash_table_lookup(timestamps,str);
   g_return_val_if_fail(value != NULL, 0);
   timestamp = atof(value);
-  g_free(str);
+  if (str)
+    g_free (str);
   return timestamp;
 }
 
@@ -140,7 +151,7 @@ get_timestamp_double (gchar *str)
 
 
 static gint
-print_results(ShotTestCases option, gint width, gint height, gchar *output_result_file)
+print_results(ShotTestCases option, gchar *output_result_file)
 {
     gdouble t0 = 0;
     gdouble t1 = 0;
@@ -153,22 +164,22 @@ print_results(ShotTestCases option, gint width, gint height, gchar *output_resul
         {
 		t0 = get_state_transition_timestamp_double(GST_STATE_CHANGE_NULL_TO_READY);
 		t1 = get_state_transition_timestamp_double(GST_STATE_CHANGE_PAUSED_TO_PLAYING);
-		str_test_name = g_strdup_printf("STANDBY_TO_FIRST_SHOT");
+		str_test_name = g_strdup_printf("standby-to-first-shot");
 		break;
         }
         case SHOT_TO_SHOT:
 	{
 		t0 = get_state_transition_timestamp_double(GST_STATE_CHANGE_PAUSED_TO_PLAYING);
 		t1 = get_state_transition_timestamp_double(GST_STATE_CHANGE_PLAYING_TO_PAUSED);
-		str_test_name = g_strdup_printf("SHOT_TO_SHOT");
+		str_test_name = g_strdup_printf("shot-to-shot");
 		break;
         }
         case SHOT_TO_SAVE:
 	{
 		gpointer value;
 		t0 = get_state_transition_timestamp_double(GST_STATE_CHANGE_PAUSED_TO_PLAYING);
-		t1 = get_timestamp_double("filtervpp_chain");
-	        str_test_name = g_strdup_printf("SHOT_TO_SAVE");
+		t1 = get_timestamp_double("shot-to-save-endpoint");
+	        str_test_name = g_strdup_printf("shot-to-save");
 		break;
         }
         default:
@@ -183,17 +194,18 @@ print_results(ShotTestCases option, gint width, gint height, gchar *output_resul
     FILE *file_id;
     file_id = fopen(output_result_file,"a+");
 
-    g_print("%s,%dx%d,%f\n",
-        str_test_name,width,height,delta);
+    g_print("%s\t%f\n",
+        str_test_name,delta);
 
-    g_fprintf(file_id, "%s,%dx%d,%f\n",
-        str_test_name,width,height,delta);
+    g_fprintf(file_id, "%s\t%f\n",
+        str_test_name,delta);
 
 
     g_print("Result appended in file %s\n", output_result_file);
 
     fclose(file_id);
-    g_free(str_test_name);
+    if (str_test_name)
+        g_free (str_test_name);
 
     return 0;
 }
@@ -205,12 +217,14 @@ endpoint_reached ()
 	gboolean retval = FALSE;
 
 	if (option == SHOT_TO_SAVE)
-	  str = g_strdup_printf("%s","filtervpp_chain");
+	  str = g_strdup_printf("%s","shot-to-save-endpoint");
 	else
 	  str = g_strdup_printf("camera_transition_%d",GST_STATE_CHANGE_PLAYING_TO_PAUSED);
 
 	retval = g_hash_table_lookup(timestamps, str) != NULL;
-	g_free (str);
+
+	if (str)
+		g_free (str);
 
 	return retval;
 }
@@ -234,10 +248,6 @@ bus_call (GstBus     *bus,
           gpointer    data)
 {
   GMainLoop *loop = (GMainLoop *) data;
-  static gdouble start_point = -1;
-  static gdouble end_point_shot = -1;
-  static gdouble end_point_save = -1;
-  static gboolean first_shot = TRUE;
 
   switch (GST_MESSAGE_TYPE (msg)) 
   {
@@ -275,6 +285,7 @@ bus_call (GstBus     *bus,
           name = gst_structure_get_name(structure);
           timestamp = gst_structure_get_string(structure,"timestamp");
 
+          g_printf ("name =%s timestamp=%s\n", name, timestamp);
 
           if (timestamps == NULL)
           { /* create the hash which will contain the timestamps */
@@ -347,97 +358,21 @@ run_pipeline(int argc, char *argv[], gchar *str_pipeline)
 }
 
 
-gchar *create_str_pipeline(ShotTestCases option, gint width, gint height, gint num_buffers, gchar *output_image_file)
-{
-    gchar *str_pipeline;
-    gchar *str_goocamera;
-    gchar *str_cap;
-
-    str_goocamera = g_strdup_printf("goocamera num-buffers=%d display-pos-x=50 display-pos-y=200", num_buffers);
-    str_cap = g_strdup_printf("video/x-raw-yuv, format=(fourcc)UYVY, width=%d, height=%d, framerate=0/1",width, height);
-
-    switch(option)
-    {
-      case STANDBY_TO_FIRST_SHOT:
-      case SHOT_TO_SHOT:
-      {
-          str_pipeline = g_strdup_printf("%s ! %s ! fakesink",
-                                         str_goocamera,
-                                         str_cap);
-          break;
-        }
-      case SHOT_TO_SAVE:
-        {
-          gchar *str_gooenc_jpeg;
-          gchar *str_multifilesink;
-          gchar *str_goofilter_vpp;
-          gchar *str_vpp_cap;
-          str_goofilter_vpp = g_strdup_printf("goofilter_vpp rotation=90");
-          str_gooenc_jpeg   = g_strdup_printf("gooenc_jpeg thumbnail=128x96  comment=string");
-          str_multifilesink = g_strdup_printf("filesink name=filesink0 location=%s_%s.jpg",
-                                              output_image_file,
-                                              "%d");
-          str_vpp_cap = g_strdup_printf("video/x-raw-yuv, format=(fourcc)UYVY, width=%d, height=%d, framerate=0/1",height,width);
-
-          str_pipeline = g_strdup_printf("%s ! %s ! %s ! %s ! %s",
-                                        str_goocamera,
-                                        str_cap,
-                                        str_goofilter_vpp,
-                                        str_gooenc_jpeg,
-                                        str_multifilesink);
-          g_free(str_gooenc_jpeg);
-          g_free(str_multifilesink);
-          g_free(str_goofilter_vpp);
-          g_free(str_vpp_cap);
-          break;
-        }
-      default:
-        {
-          str_pipeline = NULL;
-          break;
-        }
-    }
-
-    g_free(str_goocamera);
-    g_free(str_cap);
-
-    g_print("Pipeline to be run:\n%s\n",str_pipeline);
-    return str_pipeline;
-}
-
-
 int
 main (int   argc,
       char *argv[])
 {
 
-    gchar *str_pipeline;
-
 /*
     Default values
 */
     gchar *output_result_file ="shot.txt";
-    gint width=640;
-    gint height=480;
-    gint num_buffers=1;
-    gchar *output_image_file="test";
+    gchar *str_pipeline = NULL;
 
     /* Get input arguments */
-    if(get_input_arguments(argc,
-                           argv,
-                           &option,
-                           &width,
-                           &height,
-                           &num_buffers,
-                           &output_result_file,
-                           &output_image_file) == INVALID_TEST)
+    if (get_input_arguments (argc, argv, &option, &output_result_file, &str_pipeline) == FALSE)
     {
-     return -1;
-    }
-
-    {/* Create the pipeline string */
-        str_pipeline = create_str_pipeline(option,width,height,num_buffers,output_image_file);
-        g_return_val_if_fail(str_pipeline != NULL, -1);
+        return -1;
     }
 
     {/* Play the pipeline */
@@ -445,12 +380,11 @@ main (int   argc,
     }
 
     {/* print the results */
-      print_results(option, width, height, output_result_file);
+        print_results (option, output_result_file);
     }
 
     { /* Cleaning global variables */
-      g_hash_table_destroy(timestamps);
-      g_free(str_pipeline);
+        g_hash_table_destroy (timestamps);
     }
 
 
