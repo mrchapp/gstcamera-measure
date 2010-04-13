@@ -11,7 +11,8 @@ typedef enum {
   INVALID_TEST = 0,
   STANDBY_TO_FIRST_SHOT,
   SHOT_TO_SHOT,
-  SHOT_TO_SAVE
+  SHOT_TO_SAVE,
+  FOCUS_LATENCY
   } ShotTestCases;
 
 /*
@@ -29,11 +30,12 @@ Functions
 static void
 print_usage(char* appname)
 {
-	 g_printerr("Usage: %s [-o 0=STANDBY_TO_FIRST_SHOT | 1=SHOT_TO_SHOT | 2=SHOT_TO_SAVE] [-p pipeline] [-l log file]\n",appname);
+	 g_printerr("Usage: %s [-o 0=STANDBY_TO_FIRST_SHOT | 1=SHOT_TO_SHOT | 2=SHOT_TO_SAVE | 3=FOCUS_LATENCY ] [-p pipeline] [-l log file]\n",appname);
 	 g_printerr("\nPipelines Examples:\n\n");
 	 g_printerr("\t %s -o 0 -l out.txt -p \"goocamera num-buffers=1 imagecap=true display-pos-x=50 display-pos-y=200 ! video/x-raw-yuv, format=(fourcc)UYVY, width=640, height=480, framerate=10/1 ! fakesink\"\n\n", appname);
 	 g_printerr("\t %s -o 1 -l out.txt -p \"goocamera num-buffers=1 imagecap=true display-pos-x=50 display-pos-y=200 ! video/x-raw-yuv, format=(fourcc)UYVY, width=640, height=480, framerate=10/1 ! fakesink\"\n\n", appname);
 	 g_printerr("\t %s -o 2 -l out.txt -p \"goocamera num-buffers=1 imagecap=true display-pos-x=50 display-pos-y=200 ! video/x-raw-yuv, format=(fourcc)UYVY, width=640, height=480, framerate=10/1 ! goofilter_vpp ! gooenc_jpeg ! filesink location=test.jpeg\"\n\n", appname);
+	 g_printerr("\t %s -o 3 -l out.txt -p \"goocamera num-buffers=1 imagecap=true display-pos-x=50 display-pos-y=200 focus=0 ! video/x-raw-yuv, format=(fourcc)UYVY, width=640, height=480, framerate=10/1 ! fakesink\"\n\n", appname);
 }
 
 /*
@@ -76,6 +78,9 @@ get_input_arguments(
              break;
            case 2:
              *option = SHOT_TO_SAVE;
+             break;
+           case 3:
+             *option = FOCUS_LATENCY;
              break;
            default:
              *option = INVALID_TEST;
@@ -182,6 +187,14 @@ print_results(ShotTestCases option, gchar *output_result_file)
 	        str_test_name = g_strdup_printf("shot-to-save");
 		break;
         }
+        case FOCUS_LATENCY:
+	{
+		gpointer value;
+		t0 = get_timestamp_double("focus-startpoint");
+		t1 = get_timestamp_double("focus-endpoint");
+	        str_test_name = g_strdup_printf("focus-latency");
+		break;
+        }
         default:
           break;
     }
@@ -209,7 +222,7 @@ print_results(ShotTestCases option, gchar *output_result_file)
 
     return 0;
 }
-  
+
 static gboolean
 endpoint_reached ()
 {
@@ -218,6 +231,8 @@ endpoint_reached ()
 
 	if (option == SHOT_TO_SAVE)
 	  str = g_strdup_printf("%s","shot-to-save-endpoint");
+	else if (option == FOCUS_LATENCY)
+	  str = g_strdup_printf("%s","focus-endpoint");
 	else
 	  str = g_strdup_printf("camera_transition_%d",GST_STATE_CHANGE_PLAYING_TO_PAUSED);
 
